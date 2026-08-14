@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="robots" content="noindex, nofollow">
   <title>Log Challenge — Answer Key (Private)</title>
-  <link rel="stylesheet" href="css/answers.css">
+  <link rel="stylesheet" href="/src/styles/answers.css">
 </head>
 <body>
 <div class="page">
@@ -223,17 +223,6 @@ JOIN users u ON u.id = a.user_id WHERE u.username = 'omar.davis';</div>
   </footer>
 </div>
 
-<script type="module" src="js/highlight.mjs"></script>
-<script type="module">
-  // Blocks render as plain text until this resolves — see the .sql-block
-  // rule in css/answers.css for how that looks either way.
-  const ok = await window.SqlHighlight.ready;
-  if (ok) {
-    document.querySelectorAll(".sql-block[data-sql]").forEach((el) => {
-      const html = window.SqlHighlight.toHtml(el.textContent);
-      if (html) el.innerHTML = html;
-    });
-  }
-</script>
+<script type="module" src="/src/answers-main.js"></script>
 </body>
 </html>

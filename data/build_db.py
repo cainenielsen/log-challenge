@@ -22,7 +22,7 @@ SEED = 20260814
 random.seed(SEED)
 
 OUT_PATH = sys.argv[1] if len(sys.argv) > 1 else os.path.join(
-    os.path.dirname(__file__), "..", "data.db"
+    os.path.dirname(__file__), "..", "public", "data.db"
 )
 
 # ---------------------------------------------------------------------------

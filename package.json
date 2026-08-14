@@ -1,0 +1,21 @@
+{
+  "name": "log-challenge",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Support-engineer debugging exercise: Lucene log search + read-only SQL over a client-side SQLite DB",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "gen-db": "python3 data/build_db.py"
+  },
+  "devDependencies": {
+    "vite": "^8.2.1"
+  },
+  "dependencies": {
+    "@shikijs/langs": "^4.4.3",
+    "shiki": "^4.4.3",
+    "sql.js": "^1.14.2"
+  }
+}
