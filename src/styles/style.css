@@ -109,7 +109,7 @@ input, textarea { font-family: inherit; color: inherit; }
 .btn-primary { background: var(--accent); border-color: var(--accent); color: #0b1220; font-weight: 700; }
 .btn-primary:hover { background: #6f9aff; }
 .btn-icon { flex: 0 0 auto; }
-kbd { font-family: var(--mono); font-size: 11px; background: #0b1220; padding: 1px 5px; border-radius: 4px; margin-left: 6px; opacity: .8; }
+kbd { font-family: var(--mono); font-size: 11px; color: var(--text-dim); background: #0b1220; padding: 1px 5px; border-radius: 4px; opacity: .8; }
 
 .empty-state { padding: 30px; color: var(--text-dim); text-align: center; }
 .truncate-note { padding: 10px 4px; color: var(--text-faint); font-size: 12px; }
@@ -268,7 +268,8 @@ kbd { font-family: var(--mono); font-size: 11px; background: #0b1220; padding: 1
 .facet-count { color: var(--text-faint); font-variant-numeric: tabular-nums; font-size: 11px; }
 
 .logs-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; padding: 14px 18px; overflow: hidden; }
-.query-bar { display: flex; gap: 8px; }
+.query-bar { display: flex; align-items: center; gap: 8px; }
+.query-bar kbd { flex: 0 0 auto; }
 #query-input {
   flex: 1 1 auto;
   background: var(--bg-panel-alt);
@@ -383,11 +384,10 @@ kbd { font-family: var(--mono); font-size: 11px; background: #0b1220; padding: 1
   margin: 18px 0 8px;
 }
 .admin-sidebar h3:first-child { margin-top: 0; }
-.table-list, .example-list { list-style: none; margin: 0; padding: 0; }
-.table-list-btn, .example-btn {
-  display: flex;
+.example-list { list-style: none; margin: 0; padding: 0; }
+.example-btn {
+  display: block;
   width: 100%;
-  align-items: center;
   background: transparent;
   border: none;
   color: var(--text-dim);
@@ -396,25 +396,30 @@ kbd { font-family: var(--mono); font-size: 11px; background: #0b1220; padding: 1
   cursor: pointer;
   font-size: 12.5px;
   text-align: left;
+  line-height: 1.4;
+  margin-bottom: 2px;
 }
-.table-list-btn:hover, .example-btn:hover { background: var(--bg-hover); color: var(--text); }
-.table-list-btn.active { background: var(--accent-dim); color: #cfdcff; }
-.table-name { flex: 1 1 auto; font-family: var(--mono); }
-.table-count { color: var(--text-faint); font-size: 11px; }
-.example-btn { display: block; margin-bottom: 2px; line-height: 1.4; }
+.example-btn:hover { background: var(--bg-hover); color: var(--text); }
 
 .admin-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; padding: 14px 18px; overflow: hidden; }
 .sql-box { flex: 0 0 auto; }
 
 /* Live-highlighted SQL editor: a Shiki-rendered backdrop sits behind a
    transparent textarea (only its caret and text-selection are visible) —
-   the classic highlighted-textarea-overlay technique. Both layers share
-   identical box-sizing/padding/border-width/font so glyphs line up. */
-.sql-editor { position: relative; }
+   the classic highlighted-textarea-overlay technique.
+
+   The wrapper owns a fixed, explicit height, and both layers fill it via
+   height:100% — neither one derives its size from the other. Letting the
+   textarea's own height set the wrapper's (auto-height-from-child) and
+   having the backdrop merely inset:0 into that turned out not to be
+   reliable: the backdrop could render taller than the textarea. A fixed
+   height on the shared ancestor is unambiguous — there's nothing left to
+   disagree about. */
+.sql-editor { position: relative; height: 132px; }
 .sql-highlight, #sql-input {
   box-sizing: border-box;
   width: 100%;
-  min-height: 96px;
+  height: 100%;
   margin: 0;
   padding: 10px 12px;
   border: 1px solid transparent;
@@ -442,7 +447,13 @@ kbd { font-family: var(--mono); font-size: 11px; background: #0b1220; padding: 1
 }
 #sql-input {
   position: relative;
-  resize: vertical;
+  /* resize:none overrides the browser's default (textareas are
+     resizable out of the box via the UA stylesheet) — that native grip
+     is an unstyleable widget that doesn't respect the dark theme and
+     reads as a stray patch stuck to the corner of an otherwise
+     custom-styled box. Longer queries scroll within the fixed height
+     (the highlighted backdrop's scroll position stays in sync). */
+  resize: none;
   background: transparent;
   color: transparent;
   caret-color: var(--text);
@@ -455,11 +466,37 @@ kbd { font-family: var(--mono); font-size: 11px; background: #0b1220; padding: 1
 .sql-status.error { color: var(--level-error); font-family: var(--mono); }
 .sql-status.ok { color: #7fd499; }
 
-.schema-panel { margin: 10px 0; padding: 10px 14px; background: var(--bg-panel-alt); border: 1px solid var(--border); border-radius: 6px; }
-.schema-header { font-size: 12px; color: var(--text-dim); margin-bottom: 8px; }
+.schema-sidebar {
+  flex: 0 0 400px;
+  border-left: 1px solid var(--border);
+  background: var(--bg-panel);
+  overflow-y: auto;
+  padding: 14px;
+}
+.schema-sidebar h3 {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--text-faint);
+  margin: 0 0 10px;
+}
+.schema-nav { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.schema-nav-btn {
+  background: var(--bg-panel-alt);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 11.5px;
+  font-family: var(--mono);
+  cursor: pointer;
+}
+.schema-nav-btn:hover { background: var(--bg-hover); color: var(--text); }
+.schema-nav-btn.active { background: var(--accent-dim); border-color: var(--accent); color: #cfdcff; }
+.schema-panel { overflow-x: auto; }
 .schema-table { width: 100%; border-collapse: collapse; font-size: 12px; }
-.schema-table th { text-align: left; color: var(--text-faint); font-weight: 600; padding: 4px 8px; }
-.schema-table td { padding: 4px 8px; color: var(--text); font-family: var(--mono); border-top: 1px solid var(--border); }
+.schema-table th { text-align: left; color: var(--text-faint); font-weight: 600; padding: 4px 6px; white-space: nowrap; }
+.schema-table td { padding: 4px 6px; color: var(--text); font-family: var(--mono); border-top: 1px solid var(--border); white-space: nowrap; }
 
 .admin-results { flex: 1 1 auto; overflow: auto; min-height: 0; margin-top: 8px; }
 .results-table { width: 100%; border-collapse: collapse; font-size: 12.5px; font-family: var(--mono); }
@@ -485,4 +522,5 @@ kbd { font-family: var(--mono); font-size: 11px; background: #0b1220; padding: 1
 @media (max-width: 860px) {
   .logs-layout, .admin-layout { flex-direction: column; overflow-y: auto; }
   .logs-sidebar, .admin-sidebar { flex: 0 0 auto; width: 100%; border-right: none; border-bottom: 1px solid var(--border); }
+  .schema-sidebar { flex: 0 0 auto; width: 100%; border-left: none; border-top: 1px solid var(--border); }
 }

@@ -33,13 +33,9 @@ export function checkReadOnly(sqlText) {
 }
 
 export function init(root, nav) {
-  const state = { activeTable: null };
-
   root.innerHTML = `
     <div class="admin-layout">
       <aside class="admin-sidebar">
-        <h3>Tables</h3>
-        <ul class="table-list" id="table-list"></ul>
         <h3>Example queries</h3>
         <ul class="example-list" id="example-list"></ul>
       </aside>
@@ -52,25 +48,30 @@ export function init(root, nav) {
           <div class="sql-actions">
             <button id="run-sql" class="btn btn-primary">
               <svg class="btn-icon" viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" focusable="false"><path d="M4 2.3v11.4a.6.6 0 0 0 .92.5l9-5.7a.6.6 0 0 0 0-1l-9-5.7a.6.6 0 0 0-.92.5z" fill="currentColor"/></svg>
-              Run query <kbd>Ctrl+Enter</kbd>
+              Run query
             </button>
+            <kbd>Ctrl+Enter</kbd>
             <span id="sql-status" class="sql-status"></span>
           </div>
         </div>
-        <div id="schema-panel" class="schema-panel" hidden></div>
         <div id="admin-results" class="admin-results"></div>
       </main>
+      <aside class="schema-sidebar">
+        <h3>Schema</h3>
+        <nav class="schema-nav" id="schema-nav"></nav>
+        <div class="schema-panel" id="schema-panel"></div>
+      </aside>
     </div>
   `;
 
-  const tableListEl = qs("#table-list", root);
   const exampleListEl = qs("#example-list", root);
   const sqlInput = qs("#sql-input", root);
   const sqlHighlightEl = qs("#sql-highlight", root);
   const runBtn = qs("#run-sql", root);
   const statusEl = qs("#sql-status", root);
-  const schemaPanel = qs("#schema-panel", root);
   const resultsEl = qs("#admin-results", root);
+  const schemaNavEl = qs("#schema-nav", root);
+  const schemaPanelEl = qs("#schema-panel", root);
 
   // Live syntax highlighting: a read-only backdrop (built by Shiki, see
   // src/app/highlight.js) sits behind the real textarea, which is rendered
@@ -100,21 +101,12 @@ export function init(root, nav) {
   sqlInput.addEventListener("scroll", syncHighlightScroll);
 
   const tables = DB.listTables();
-  tables.forEach((t) => {
-    const count = DB.tableRowCount(t);
-    const li = el("li", { class: "table-list-item" });
-    const btn = el("button", {
-      class: "table-list-btn",
-      onclick: () => selectTable(t),
-    }, [
-      el("span", { class: "table-name", text: t }),
-      el("span", { class: "table-count", text: String(count) }),
-    ]);
-    li.appendChild(btn);
-    tableListEl.appendChild(li);
-  });
 
-  EXAMPLE_QUERIES.forEach((ex) => {
+  // Example queries: a plain "list everything" entry per table, followed by
+  // the curated ones. These only ever touch the query box — picking one
+  // never changes what the schema panel on the right is showing.
+  const listAllQueries = tables.map((t) => ({ label: `List all ${t}`, sql: `SELECT * FROM ${t} LIMIT 50;` }));
+  [...listAllQueries, ...EXAMPLE_QUERIES].forEach((ex) => {
     const li = el("li");
     const btn = el("button", {
       class: "example-btn",
@@ -125,21 +117,18 @@ export function init(root, nav) {
     exampleListEl.appendChild(li);
   });
 
-  function selectTable(t) {
-    state.activeTable = t;
-    qsa(".table-list-btn", root).forEach((b) => b.classList.remove("active"));
-    const idx = tables.indexOf(t);
-    qsa(".table-list-btn", root)[idx]?.classList.add("active");
-    renderSchema(t);
-    setSql(`SELECT * FROM ${t} LIMIT 50;`);
-    runQuery();
-  }
+  // Schema side panel: an independent nav of table names, entirely
+  // decoupled from the query box and the example-query list above.
+  tables.forEach((t) => {
+    const btn = el("button", { class: "schema-nav-btn", text: t, onclick: () => selectSchema(t) });
+    btn.dataset.table = t;
+    schemaNavEl.appendChild(btn);
+  });
 
-  function renderSchema(t) {
+  function selectSchema(t) {
+    qsa(".schema-nav-btn", root).forEach((b) => b.classList.toggle("active", b.dataset.table === t));
     const cols = DB.tableSchema(t);
-    schemaPanel.hidden = false;
-    schemaPanel.innerHTML = `
-      <div class="schema-header">Schema: <strong>${escapeHtml(t)}</strong></div>
+    schemaPanelEl.innerHTML = `
       <table class="schema-table">
         <thead><tr><th>Column</th><th>Type</th><th>Not Null</th><th>PK</th></tr></thead>
         <tbody>
@@ -154,6 +143,7 @@ export function init(root, nav) {
       </table>
     `;
   }
+  if (tables.length) selectSchema(tables[0]);
 
   function runQuery() {
     const sqlText = sqlInput.value.trim();

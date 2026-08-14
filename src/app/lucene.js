@@ -12,6 +12,10 @@
 //   grouping                  (level:ERROR OR level:WARN) AND service:payments-service
 //   numeric comparisons       duration_ms:>1000   http_status:>=500
 //   numeric ranges            duration_ms:[500 TO 1500]
+//   string/date comparisons   ts:>=2026-08-07T00:00:00.000Z
+//   string/date ranges        ts:[2026-08-07T00:00:00.000Z TO 2026-08-08T00:00:00.000Z]
+//                             (non-numeric fields compare lexicographically,
+//                              which sorts correctly for ISO8601 timestamps)
 //
 // Terms with no operator between them are implicitly ANDed together
 // (this matches Datadog / Kibana query bar behavior, not classic Lucene's
@@ -62,9 +66,12 @@ function readBracketRange(input, i) {
   let j = input.indexOf("]", i);
   if (j === -1) throw new ParseError("Unterminated range starting at position " + i);
   const raw = input.slice(i + 1, j);
-  const m = raw.match(/^\s*(\*|-?\d+(?:\.\d+)?)\s+TO\s+(\*|-?\d+(?:\.\d+)?)\s*$/);
-  if (!m) throw new ParseError('Malformed range "[' + raw + ']" — expected [N TO M]');
-  return { from: m[1] === "*" ? null : Number(m[1]), to: m[2] === "*" ? null : Number(m[2]), next: j + 1 };
+  // Bounds are kept as raw strings — evaluation decides whether to compare
+  // numerically or lexicographically (e.g. ISO8601 timestamps sort
+  // correctly as strings) based on the field.
+  const m = raw.match(/^\s*(\*|\S+)\s+TO\s+(\*|\S+)\s*$/);
+  if (!m) throw new ParseError('Malformed range "[' + raw + ']" — expected [X TO Y]');
+  return { from: m[1] === "*" ? null : m[1], to: m[2] === "*" ? null : m[2], next: j + 1 };
 }
 
 function readBareWord(input, i) {
@@ -118,13 +125,14 @@ function tokenize(input) {
         if (input[i] === "=") { op += "="; i++; }
         const w = readBareWord(input, i);
         i = w.next;
-        const num = Number(w.value);
-        if (Number.isNaN(num)) throw new ParseError('Expected a number after "' + op + '" for field "' + field + '"');
+        if (w.value === "") throw new ParseError('Expected a value after "' + op + '" for field "' + field + '"');
+        // Kept as a raw string — numeric vs. lexicographic comparison is
+        // decided at evaluation time based on the field.
         let from = null, to = null;
-        if (op === ">") from = { value: num, exclusive: true };
-        else if (op === ">=") from = { value: num, exclusive: false };
-        else if (op === "<") to = { value: num, exclusive: true };
-        else if (op === "<=") to = { value: num, exclusive: false };
+        if (op === ">") from = { value: w.value, exclusive: true };
+        else if (op === ">=") from = { value: w.value, exclusive: false };
+        else if (op === "<") to = { value: w.value, exclusive: true };
+        else if (op === "<=") to = { value: w.value, exclusive: false };
         tokens.push(termToken(field, null, false, false, { fromCmp: from, toCmp: to }, negate));
       } else {
         const w = readBareWord(input, i);
@@ -247,19 +255,26 @@ function matchTermAgainstField(row, field, node) {
   const raw = row[field];
   if (node.range) {
     if (raw === undefined || raw === null || raw === "") return false;
-    const num = Number(raw);
-    if (Number.isNaN(num)) return false;
     const r = node.range;
+    // Numeric fields compare numerically; everything else (notably `ts`,
+    // an ISO8601 string) compares lexicographically — which sorts
+    // correctly for zero-padded ISO timestamps.
+    const numeric = NUMERIC_FIELDS.has(field);
+    const val = numeric ? Number(raw) : String(raw);
+    if (numeric && Number.isNaN(val)) return false;
+    const bound = (b) => (numeric ? Number(b) : b);
     if ("from" in r) {
-      if (r.from !== null && num < r.from) return false;
-      if (r.to !== null && num > r.to) return false;
+      if (r.from !== null && val < bound(r.from)) return false;
+      if (r.to !== null && val > bound(r.to)) return false;
       return true;
     }
     if (r.fromCmp) {
-      if (r.fromCmp.exclusive ? !(num > r.fromCmp.value) : !(num >= r.fromCmp.value)) return false;
+      const b = bound(r.fromCmp.value);
+      if (r.fromCmp.exclusive ? !(val > b) : !(val >= b)) return false;
     }
     if (r.toCmp) {
-      if (r.toCmp.exclusive ? !(num < r.toCmp.value) : !(num <= r.toCmp.value)) return false;
+      const b = bound(r.toCmp.value);
+      if (r.toCmp.exclusive ? !(val < b) : !(val <= b)) return false;
     }
     return true;
   }

@@ -1,14 +1,27 @@
 // Log Explorer tab: Datadog-style facet sidebar + Lucene query bar over the
 // `logs` table (loaded once into memory — filtering happens client-side).
+//
+// There's a single source of truth for what's filtered: the query text box.
+// The service/level facets and time-range controls don't filter on their
+// own — they toggle the equivalent Lucene term into the query text and run
+// the same search a manual Enter would, so what's filtering the results is
+// always visible (and editable) in the box, never hidden in separate UI
+// state.
 import * as Util from "./util.js";
 import * as DB from "./db.js";
 import * as Lucene from "./lucene.js";
 
-const { qs, qsa, formatTs, prettyJson, debounce, el } = Util;
+const { qs, qsa, formatTs, prettyJson, el } = Util;
 
 const SERVICES = ["auth-service", "payments-service", "notifications-service"];
 const LEVELS = ["DEBUG", "INFO", "WARN", "ERROR"];
 const MAX_DISPLAY_ROWS = 300;
+const TIME_PRESET_HOURS = { "24h": 24, "3d": 72, "7d": 168 };
+
+// Matches a ts:[X TO Y] clause anywhere in the query text — used to both
+// detect/replace/remove the current time-range term and to read back its
+// bounds (for the datetime inputs and preset-button highlighting).
+const TS_RANGE_RE = /ts:\[([^\]]+?)\s+TO\s+([^\]]+?)\]/;
 
 const HELP_HTML = `
   <strong>Query syntax</strong> (Lucene / Datadog style):<br>
@@ -22,12 +35,14 @@ const HELP_HTML = `
   <code>level:ERROR OR level:WARN</code> &middot;
   <code>(level:ERROR OR level:WARN) AND service:payments-service</code><br>
   <code>duration_ms:&gt;1000</code> &middot;
-  <code>http_status:[400 TO 599]</code><br>
+  <code>http_status:[400 TO 599]</code> &middot;
+  <code>ts:[2026-08-07T00:00:00.000Z TO 2026-08-08T00:00:00.000Z]</code><br>
   Bare words search message/service/error_type/stack_trace/http_path/metadata.
-  Terms with no operator are combined with AND.<br>
+  Terms with no operator are combined with AND. The Service/Level/Time
+  controls on the left just toggle these same terms into the box.<br>
   Searchable fields: service, level, message, request_id, trace_id, user_id,
   account_id, transaction_id, http_method, http_path, http_status,
-  duration_ms, error_type, stack_trace, metadata.
+  duration_ms, error_type, stack_trace, metadata, ts.
 `;
 
 function levelClass(level) { return "level-" + level.toLowerCase(); }
@@ -37,16 +52,7 @@ export function init(root, nav) {
   const datasetMax = allRows[0]?.ts || "";
   const datasetMin = allRows[allRows.length - 1]?.ts || "";
 
-  const state = {
-    queryText: "",
-    ast: null,
-    parseError: null,
-    selectedServices: new Set(),
-    selectedLevels: new Set(),
-    from: datasetMin,
-    to: datasetMax,
-    expandedId: null,
-  };
+  const state = { queryText: "", ast: null, parseError: null, expandedId: null };
 
   root.innerHTML = `
     <div class="logs-layout">
@@ -78,6 +84,7 @@ export function init(root, nav) {
       <main class="logs-main">
         <div class="query-bar">
           <input type="text" id="query-input" placeholder='Search, e.g. service:payments-service AND level:ERROR' autocomplete="off">
+          <kbd>Enter</kbd>
           <button id="help-toggle" class="btn" title="Query syntax help">?</button>
         </div>
         <div id="help-panel" class="help-panel" hidden>${HELP_HTML}</div>
@@ -97,41 +104,69 @@ export function init(root, nav) {
   const facetServiceEl = qs("#facet-service", root);
   const facetLevelEl = qs("#facet-level", root);
 
-  fromInput.value = isoToLocalInput(datasetMin);
-  toInput.value = isoToLocalInput(datasetMax);
-
   helpToggle.addEventListener("click", () => { helpPanel.hidden = !helpPanel.hidden; });
+
+  // --- query text helpers: every filter control below is really just
+  // editing this string, then running the same search Enter would. ---
+  function appendTerm(text, term) {
+    const trimmed = text.trim();
+    return trimmed ? `${trimmed} AND ${term}` : term;
+  }
+  function removeSubstring(text, substr) {
+    return cleanupBoolean(text.replace(substr, ""));
+  }
+  function cleanupBoolean(text) {
+    return text
+      .replace(/\s+AND\s+AND\s+/gi, " AND ")
+      .replace(/^\s*AND\s+/i, "")
+      .replace(/\s+AND\s*$/i, "")
+      .trim();
+  }
+
+  function toggleFacetTerm(field, value) {
+    const term = `${field}:${value}`;
+    queryInput.value = queryInput.value.includes(term)
+      ? removeSubstring(queryInput.value, term)
+      : appendTerm(queryInput.value, term);
+    runSearch();
+  }
+
+  function presetRange(preset) {
+    if (preset === "all") return null;
+    const hours = TIME_PRESET_HOURS[preset];
+    const to = new Date(datasetMax);
+    const from = new Date(to.getTime() - hours * 3600 * 1000);
+    return { from: from.toISOString().replace(/\.\d{3}Z$/, ".000Z"), to: datasetMax };
+  }
+  function setTimeRange(fromIso, toIso) {
+    const term = `ts:[${fromIso} TO ${toIso}]`;
+    queryInput.value = TS_RANGE_RE.test(queryInput.value)
+      ? queryInput.value.replace(TS_RANGE_RE, term)
+      : appendTerm(queryInput.value, term);
+    runSearch();
+  }
+  function clearTimeRange() {
+    queryInput.value = removeSubstring(queryInput.value, TS_RANGE_RE);
+    runSearch();
+  }
 
   qsa(".time-presets button", root).forEach((btn) => {
     btn.addEventListener("click", () => {
-      qsa(".time-presets button", root).forEach((b) => b.classList.remove("active"));
-      btn.classList.add("active");
-      const preset = btn.dataset.preset;
-      if (preset === "all") {
-        state.from = datasetMin; state.to = datasetMax;
-      } else {
-        const hours = { "24h": 24, "3d": 72, "7d": 168 }[preset];
-        const to = new Date(datasetMax);
-        const from = new Date(to.getTime() - hours * 3600 * 1000);
-        state.from = from.toISOString().replace(/\.\d{3}Z$/, ".000Z");
-        state.to = datasetMax;
-      }
-      fromInput.value = isoToLocalInput(state.from);
-      toInput.value = isoToLocalInput(state.to);
-      render();
+      const range = presetRange(btn.dataset.preset);
+      if (range) setTimeRange(range.from, range.to); else clearTimeRange();
     });
   });
 
   function onManualTimeChange() {
-    qsa(".time-presets button", root).forEach((b) => b.classList.remove("active"));
-    state.from = localInputToIso(fromInput.value) || datasetMin;
-    state.to = localInputToIso(toInput.value) || datasetMax;
-    render();
+    const fromIso = localInputToIso(fromInput.value);
+    const toIso = localInputToIso(toInput.value);
+    if (!fromIso && !toIso) { clearTimeRange(); return; }
+    setTimeRange(fromIso || datasetMin, toIso || datasetMax);
   }
   fromInput.addEventListener("change", onManualTimeChange);
   toInput.addEventListener("change", onManualTimeChange);
 
-  const onQueryInput = debounce(() => {
+  function runSearch() {
     state.queryText = queryInput.value;
     try {
       state.ast = Lucene.parse(state.queryText);
@@ -140,42 +175,31 @@ export function init(root, nav) {
       state.parseError = e.message;
     }
     render();
-  }, 150);
-  queryInput.addEventListener("input", onQueryInput);
-
-  function matchesTime(row) {
-    return row.ts >= state.from && row.ts <= state.to;
   }
+  // Search runs on Enter, not on every keystroke — queries can involve
+  // scanning thousands of rows, and re-filtering mid-word is wasted work.
+  queryInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); runSearch(); }
+  });
+
   function matchesQuery(row) {
     if (state.parseError) return false;
     try { return Lucene.evaluate(state.ast, row); } catch (e) { return false; }
   }
-  function matchesServiceSet(row, ignore) {
-    if (ignore || state.selectedServices.size === 0) return true;
-    return state.selectedServices.has(row.service);
-  }
-  function matchesLevelSet(row, ignore) {
-    if (ignore || state.selectedLevels.size === 0) return true;
-    return state.selectedLevels.has(row.level);
-  }
 
   function render() {
-    const baseFiltered = allRows.filter((r) => matchesTime(r) && matchesQuery(r));
+    const finalRows = state.parseError ? [] : allRows.filter(matchesQuery);
 
-    // Facet counts: each facet's counts reflect all *other* active filters.
     const serviceCounts = Object.fromEntries(SERVICES.map((s) => [s, 0]));
-    baseFiltered.filter((r) => matchesLevelSet(r)).forEach((r) => {
-      if (serviceCounts[r.service] !== undefined) serviceCounts[r.service]++;
-    });
     const levelCounts = Object.fromEntries(LEVELS.map((l) => [l, 0]));
-    baseFiltered.filter((r) => matchesServiceSet(r)).forEach((r) => {
+    finalRows.forEach((r) => {
+      if (serviceCounts[r.service] !== undefined) serviceCounts[r.service]++;
       if (levelCounts[r.level] !== undefined) levelCounts[r.level]++;
     });
 
-    renderFacetList(facetServiceEl, SERVICES, state.selectedServices, serviceCounts, "service");
-    renderFacetList(facetLevelEl, LEVELS, state.selectedLevels, levelCounts, "level");
-
-    const finalRows = baseFiltered.filter((r) => matchesServiceSet(r) && matchesLevelSet(r));
+    renderFacetList(facetServiceEl, "service", SERVICES, serviceCounts);
+    renderFacetList(facetLevelEl, "level", LEVELS, levelCounts);
+    syncTimeUI();
 
     if (state.parseError) {
       statusEl.textContent = `Query error: ${state.parseError}`;
@@ -188,20 +212,38 @@ export function init(root, nav) {
     renderResults(finalRows);
   }
 
-  function renderFacetList(container, values, selectedSet, counts, dim) {
+  function syncTimeUI() {
+    qsa(".time-presets button", root).forEach((b) => b.classList.remove("active"));
+    const m = queryInput.value.match(TS_RANGE_RE);
+    if (!m) {
+      qs('.time-presets button[data-preset="all"]', root)?.classList.add("active");
+      fromInput.value = isoToLocalInput(datasetMin);
+      toInput.value = isoToLocalInput(datasetMax);
+      return;
+    }
+    const [, fromIso, toIso] = m;
+    fromInput.value = isoToLocalInput(fromIso);
+    toInput.value = isoToLocalInput(toIso);
+    for (const preset of Object.keys(TIME_PRESET_HOURS)) {
+      const r = presetRange(preset);
+      if (r && r.from === fromIso && r.to === toIso) {
+        qs(`.time-presets button[data-preset="${preset}"]`, root)?.classList.add("active");
+        break;
+      }
+    }
+  }
+
+  function renderFacetList(container, field, values, counts) {
     container.innerHTML = "";
     values.forEach((v) => {
-      const active = selectedSet.has(v);
+      const active = queryInput.value.includes(`${field}:${v}`);
       const li = el("li", { class: "facet-item" + (active ? " active" : "") });
       const btn = el("button", { class: "facet-btn" }, [
-        el("span", { class: "facet-swatch " + (dim === "level" ? levelClass(v) : "") }),
+        el("span", { class: "facet-swatch " + (field === "level" ? levelClass(v) : "") }),
         el("span", { class: "facet-name", text: v }),
         el("span", { class: "facet-count", text: counts[v]?.toLocaleString() ?? "0" }),
       ]);
-      btn.addEventListener("click", () => {
-        if (selectedSet.has(v)) selectedSet.delete(v); else selectedSet.add(v);
-        render();
-      });
+      btn.addEventListener("click", () => toggleFacetTerm(field, v));
       li.appendChild(btn);
       container.appendChild(li);
     });
@@ -272,16 +314,7 @@ export function init(root, nav) {
   }
   function goToTrace(traceId) {
     queryInput.value = `trace_id:"${traceId}"`;
-    state.queryText = queryInput.value;
-    state.ast = Lucene.parse(state.queryText);
-    state.parseError = null;
-    state.selectedServices.clear();
-    state.selectedLevels.clear();
-    state.from = datasetMin; state.to = datasetMax;
-    fromInput.value = isoToLocalInput(datasetMin);
-    toInput.value = isoToLocalInput(datasetMax);
-    qsa(".time-presets button", root).forEach((b) => b.classList.toggle("active", b.dataset.preset === "all"));
-    render();
+    runSearch();
   }
 
   function buildDetailRow(row) {
@@ -298,7 +331,7 @@ export function init(root, nav) {
       pill("account_id", row.account_id, (v) => goToSql(`SELECT * FROM accounts WHERE id = ${Number(v)};`)),
       pill("transaction_id", row.transaction_id, (v) => goToSql(`SELECT * FROM transactions WHERE id = ${Number(v)};`)),
       pill("trace_id", row.trace_id, (v) => goToTrace(v)),
-      pill("request_id", row.request_id, (v) => { queryInput.value = `request_id:"${v}"`; onQueryInput(); }),
+      pill("request_id", row.request_id, (v) => { queryInput.value = `request_id:"${v}"`; runSearch(); }),
     ].forEach((p) => p && pills.appendChild(p));
     wrap.appendChild(pills);
 
