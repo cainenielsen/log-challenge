@@ -43,9 +43,15 @@
         </aside>
         <main class="admin-main">
           <div class="sql-box">
-            <textarea id="sql-input" spellcheck="false" placeholder="SELECT * FROM users LIMIT 20;"></textarea>
+            <div class="sql-editor">
+              <div id="sql-highlight" class="sql-highlight" aria-hidden="true"></div>
+              <textarea id="sql-input" spellcheck="false" placeholder="SELECT * FROM users LIMIT 20;"></textarea>
+            </div>
             <div class="sql-actions">
-              <button id="run-sql" class="btn btn-primary">Run query <kbd>Ctrl+Enter</kbd></button>
+              <button id="run-sql" class="btn btn-primary">
+                <svg class="btn-icon" viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" focusable="false"><path d="M4 2.3v11.4a.6.6 0 0 0 .92.5l9-5.7a.6.6 0 0 0 0-1l-9-5.7a.6.6 0 0 0-.92.5z" fill="currentColor"/></svg>
+                Run query <kbd>Ctrl+Enter</kbd>
+              </button>
               <span id="sql-status" class="sql-status"></span>
             </div>
           </div>
@@ -58,10 +64,40 @@
     const tableListEl = qs("#table-list", root);
     const exampleListEl = qs("#example-list", root);
     const sqlInput = qs("#sql-input", root);
+    const sqlHighlightEl = qs("#sql-highlight", root);
     const runBtn = qs("#run-sql", root);
     const statusEl = qs("#sql-status", root);
     const schemaPanel = qs("#schema-panel", root);
     const resultsEl = qs("#admin-results", root);
+
+    // Live syntax highlighting: a read-only backdrop (built by Shiki, see
+    // js/highlight.mjs) sits behind the real textarea, which is rendered
+    // fully transparent except for its caret. Re-rendered on every
+    // keystroke and kept in scroll-sync with the textarea.
+    function renderHighlight() {
+      const code = sqlInput.value;
+      const html = global.SqlHighlight ? global.SqlHighlight.toHtml(code) : null;
+      sqlHighlightEl.innerHTML = html || `<pre class="shiki-fallback">${escapeHtml(code)}</pre>`;
+      // Shiki's <pre> is tabindex="0" for standalone use; this one is a
+      // decorative, aria-hidden backdrop and shouldn't be a tab stop.
+      sqlHighlightEl.querySelectorAll("[tabindex]").forEach((n) => n.removeAttribute("tabindex"));
+      syncHighlightScroll();
+    }
+    function syncHighlightScroll() {
+      sqlHighlightEl.scrollTop = sqlInput.scrollTop;
+      sqlHighlightEl.scrollLeft = sqlInput.scrollLeft;
+    }
+    function setSql(text) {
+      sqlInput.value = text;
+      renderHighlight();
+    }
+    if (global.SqlHighlight) {
+      // Highlighter loads its WASM engine asynchronously — once ready,
+      // upgrade whatever's currently shown from plain text to real colors.
+      global.SqlHighlight.ready.then((ok) => { if (ok) renderHighlight(); });
+    }
+    sqlInput.addEventListener("input", renderHighlight);
+    sqlInput.addEventListener("scroll", syncHighlightScroll);
 
     const tables = DB.listTables();
     tables.forEach((t) => {
@@ -83,7 +119,7 @@
       const btn = el("button", {
         class: "example-btn",
         text: ex.label,
-        onclick: () => { sqlInput.value = ex.sql; runQuery(); },
+        onclick: () => { setSql(ex.sql); runQuery(); },
       });
       li.appendChild(btn);
       exampleListEl.appendChild(li);
@@ -95,7 +131,7 @@
       const idx = tables.indexOf(t);
       Util.qsa(".table-list-btn", root)[idx]?.classList.add("active");
       renderSchema(t);
-      sqlInput.value = `SELECT * FROM ${t} LIMIT 50;`;
+      setSql(`SELECT * FROM ${t} LIMIT 50;`);
       runQuery();
     }
 
@@ -182,12 +218,12 @@
     // Cross-tab navigation: Log Explorer can ask us to jump here with a
     // pre-filled, already-run query (e.g. clicking an account_id pill).
     nav.onOpenSql = (sqlText) => {
-      sqlInput.value = sqlText;
+      setSql(sqlText);
       runQuery();
     };
 
     // Seed with something on first load.
-    sqlInput.value = "SELECT * FROM users LIMIT 20;";
+    setSql("SELECT * FROM users LIMIT 20;");
     runQuery();
   }
 

@@ -51,8 +51,8 @@
     <p class="root-cause-label">Expected path</p>
     <div class="query-block">
       <div class="query-block-label">1. Database Admin — find the user &amp; account</div>
-      <pre class="code"><span class="kw">SELECT</span> * <span class="kw">FROM</span> users <span class="kw">WHERE</span> username = 'hiroshi.wilson';
-<span class="kw">SELECT</span> * <span class="kw">FROM</span> accounts <span class="kw">WHERE</span> user_id = 7;</pre>
+      <div class="sql-block" data-sql>SELECT * FROM users WHERE username = 'hiroshi.wilson';
+SELECT * FROM accounts WHERE user_id = 7;</div>
       <div class="query-block-label">2. Log Explorer — find the decline</div>
       <pre class="code">account_id:9 <span class="kw">AND</span> level:ERROR</pre>
     </div>
@@ -80,8 +80,8 @@
     <p class="root-cause-label">Expected path</p>
     <div class="query-block">
       <div class="query-block-label">1. Database Admin — spot the duplicate idempotency key</div>
-      <pre class="code"><span class="kw">SELECT</span> idempotency_key, <span class="kw">COUNT</span>(*) n, <span class="kw">GROUP_CONCAT</span>(id) ids
-<span class="kw">FROM</span> transactions <span class="kw">GROUP BY</span> idempotency_key <span class="kw">HAVING</span> n > 1;</pre>
+      <div class="sql-block" data-sql>SELECT idempotency_key, COUNT(*) n, GROUP_CONCAT(id) ids
+FROM transactions GROUP BY idempotency_key HAVING n > 1;</div>
       <div class="query-block-label">2. Log Explorer — see the retry</div>
       <pre class="code">account_id:21 <span class="kw">AND</span> service:payments-service</pre>
     </div>
@@ -112,8 +112,8 @@
     <p class="root-cause-label">Expected path</p>
     <div class="query-block">
       <div class="query-block-label">1. Database Admin — confirm the lock</div>
-      <pre class="code"><span class="kw">SELECT</span> id, status, locked_at, locked_reason
-<span class="kw">FROM</span> users <span class="kw">WHERE</span> username = 'elizabeth.okafor';</pre>
+      <div class="sql-block" data-sql>SELECT id, status, locked_at, locked_reason
+FROM users WHERE username = 'elizabeth.okafor';</div>
       <div class="query-block-label">2. Log Explorer — reconstruct the sequence</div>
       <pre class="code">user_id:28 <span class="kw">AND</span> service:auth-service</pre>
     </div>
@@ -142,8 +142,8 @@
     <p class="root-cause-label">Expected path</p>
     <div class="query-block">
       <div class="query-block-label">1. Database Admin — notice the account isn't USD</div>
-      <pre class="code"><span class="kw">SELECT</span> a.id, a.currency <span class="kw">FROM</span> accounts a
-<span class="kw">JOIN</span> users u <span class="kw">ON</span> u.id = a.user_id <span class="kw">WHERE</span> u.username = 'omar.davis';</pre>
+      <div class="sql-block" data-sql>SELECT a.id, a.currency FROM accounts a
+JOIN users u ON u.id = a.user_id WHERE u.username = 'omar.davis';</div>
       <div class="query-block-label">2. Log Explorer — find the exception + stack trace</div>
       <pre class="code">account_id:5 <span class="kw">AND</span> error_type:*Error</pre>
     </div>
@@ -222,5 +222,18 @@
     Regenerate the database with <code>python3 data/build_db.py</code> · seed 20260814
   </footer>
 </div>
+
+<script type="module" src="js/highlight.mjs"></script>
+<script type="module">
+  // Blocks render as plain text until this resolves — see the .sql-block
+  // rule in css/answers.css for how that looks either way.
+  const ok = await window.SqlHighlight.ready;
+  if (ok) {
+    document.querySelectorAll(".sql-block[data-sql]").forEach((el) => {
+      const html = window.SqlHighlight.toHtml(el.textContent);
+      if (html) el.innerHTML = html;
+    });
+  }
+</script>
 </body>
 </html>

@@ -16,6 +16,21 @@
   --level-info: #4f8fe0;
   --level-warn: #e0a63c;
   --level-error: #e05c5c;
+
+  /* Shiki (see js/highlight.mjs) reads these via createCssVariablesTheme —
+     transparent background because the highlighted layer sits behind the
+     live SQL textarea, which already has its own panel background. */
+  --shiki-foreground: var(--text);
+  --shiki-background: transparent;
+  --shiki-token-keyword: var(--accent);
+  --shiki-token-string: #7fd499;
+  --shiki-token-string-expression: #7fd499;
+  --shiki-token-comment: var(--text-faint);
+  --shiki-token-constant: #e0a35a;
+  --shiki-token-function: #c79bf0;
+  --shiki-token-parameter: var(--text-dim);
+  --shiki-token-punctuation: var(--text-dim);
+  --shiki-token-link: var(--accent);
 }
 
 * { box-sizing: border-box; }
@@ -79,6 +94,9 @@ input, textarea { font-family: inherit; color: inherit; }
 
 /* ---------------------------------------------------------------- shared */
 .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   background: var(--bg-panel-alt);
   border: 1px solid var(--border);
   color: var(--text);
@@ -90,6 +108,7 @@ input, textarea { font-family: inherit; color: inherit; }
 .btn:hover { background: var(--bg-hover); }
 .btn-primary { background: var(--accent); border-color: var(--accent); color: #0b1220; font-weight: 700; }
 .btn-primary:hover { background: #6f9aff; }
+.btn-icon { flex: 0 0 auto; }
 kbd { font-family: var(--mono); font-size: 11px; background: #0b1220; padding: 1px 5px; border-radius: 4px; margin-left: 6px; opacity: .8; }
 
 .empty-state { padding: 30px; color: var(--text-dim); text-align: center; }
@@ -386,19 +405,50 @@ kbd { font-family: var(--mono); font-size: 11px; background: #0b1220; padding: 1
 
 .admin-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; padding: 14px 18px; overflow: hidden; }
 .sql-box { flex: 0 0 auto; }
-#sql-input {
+
+/* Live-highlighted SQL editor: a Shiki-rendered backdrop sits behind a
+   transparent textarea (only its caret and text-selection are visible) —
+   the classic highlighted-textarea-overlay technique. Both layers share
+   identical box-sizing/padding/border-width/font so glyphs line up. */
+.sql-editor { position: relative; }
+.sql-highlight, #sql-input {
+  box-sizing: border-box;
   width: 100%;
   min-height: 96px;
-  resize: vertical;
-  background: var(--bg-panel-alt);
-  border: 1px solid var(--border);
-  color: var(--text);
-  border-radius: 6px;
+  margin: 0;
   padding: 10px 12px;
+  border: 1px solid transparent;
+  border-radius: 6px;
   font-family: var(--mono);
   font-size: 13px;
   line-height: 1.5;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
 }
+.sql-highlight {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  background: var(--bg-panel-alt);
+}
+.sql-highlight pre, .sql-highlight code {
+  margin: 0;
+  font: inherit;
+  white-space: inherit;
+  word-wrap: inherit;
+  overflow-wrap: inherit;
+}
+#sql-input {
+  position: relative;
+  resize: vertical;
+  background: transparent;
+  color: transparent;
+  caret-color: var(--text);
+  border-color: var(--border);
+}
+#sql-input::selection { background: rgba(91, 140, 255, .35); }
 #sql-input:focus { outline: none; border-color: var(--accent); }
 .sql-actions { display: flex; align-items: center; gap: 12px; margin: 10px 0 6px; }
 .sql-status { font-size: 12px; color: var(--text-dim); }

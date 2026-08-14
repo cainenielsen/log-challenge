@@ -13,6 +13,21 @@
   --good-soft: #16261c;
   --mono: "SF Mono", "Cascadia Code", Consolas, "Roboto Mono", monospace;
   --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+
+  /* Shiki (see js/highlight.mjs) reads these via createCssVariablesTheme.
+     Background is opaque here (unlike the app's live editor) since these
+     are static blocks with no textarea underneath. */
+  --shiki-foreground: #d3d9ea;
+  --shiki-background: #0b1220;
+  --shiki-token-keyword: var(--accent);
+  --shiki-token-string: var(--good);
+  --shiki-token-string-expression: var(--good);
+  --shiki-token-comment: var(--text-faint);
+  --shiki-token-constant: #8fb8f5;
+  --shiki-token-function: #c79bf0;
+  --shiki-token-parameter: var(--text-dim);
+  --shiki-token-punctuation: var(--text-dim);
+  --shiki-token-link: var(--accent);
 }
 
 * { box-sizing: border-box; }
@@ -79,6 +94,16 @@ pre.code {
   font-family: var(--mono); font-size: 12px; line-height: 1.6; overflow-x: auto; margin: 0 0 12px;
 }
 pre.code .kw { color: var(--accent); }
+
+/* SQL snippets: real Shiki highlighting (js/highlight.mjs), upgraded from
+   plain text once the highlighter loads. Same box as pre.code above; the
+   Shiki-generated <pre> inside is reset to fill it seamlessly. */
+.sql-block {
+  background: var(--shiki-background); color: var(--shiki-foreground); border-radius: 6px; padding: 11px 13px;
+  font-family: var(--mono); font-size: 12px; line-height: 1.6; overflow-x: auto; margin: 0 0 12px;
+  white-space: pre;
+}
+.sql-block pre, .sql-block code { margin: 0; font: inherit; white-space: inherit; }
 
 .grading {
   background: var(--good-soft); border-left: 3px solid var(--good); padding: 11px 15px;
