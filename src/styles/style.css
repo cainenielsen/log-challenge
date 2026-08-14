@@ -118,7 +118,7 @@ kbd { font-family: var(--mono); font-size: 11px; color: var(--text-dim); backgro
 #tab-challenge.active { display: block; overflow-y: auto; }
 
 .challenge-page {
-  max-width: 880px;
+  max-width: 1500px;
   margin: 0 auto;
   padding: 36px 24px 80px;
 }
@@ -132,11 +132,14 @@ kbd { font-family: var(--mono); font-size: 11px; color: var(--text-dim); backgro
   margin: 0 0 8px;
 }
 .challenge-hero h1 { font-size: 26px; margin: 0 0 12px; }
-.challenge-lede { color: var(--text-dim); font-size: 14.5px; line-height: 1.7; max-width: 68ch; }
+.challenge-lede { color: var(--text-dim); font-size: 14.5px; line-height: 1.7; }
 .challenge-lede code { font-family: var(--mono); color: #cfdcff; background: #0b1220; padding: 1px 5px; border-radius: 4px; }
 
-.challenge-grid { display: grid; grid-template-columns: 1.1fr 1fr; gap: 16px; margin-bottom: 16px; }
-@media (max-width: 760px) { .challenge-grid { grid-template-columns: 1fr; } }
+/* Document content (left) + kanban board (right, wider — needs room for
+   three columns) side by side; stacks on narrow viewports. */
+.challenge-layout { display: grid; grid-template-columns: minmax(300px, 380px) 1fr; gap: 24px; align-items: start; }
+.challenge-layout > * { min-width: 0; } /* let grid items shrink/stretch to their track instead of their content's intrinsic width */
+@media (max-width: 1000px) { .challenge-layout { grid-template-columns: 1fr; } }
 
 .challenge-card {
   background: var(--bg-panel);
@@ -152,23 +155,12 @@ kbd { font-family: var(--mono); font-size: 11px; color: var(--text-dim); backgro
 .step-list, .warmup-list { margin: 0; padding-left: 20px; color: var(--text-dim); font-size: 13.5px; line-height: 1.7; }
 .step-list li, .warmup-list li { margin-bottom: 8px; }
 
-.challenge-jumps { display: flex; gap: 8px; margin-top: 14px; }
+.challenge-jumps { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
 
-.cheatsheet-table { width: 100%; border-collapse: collapse; font-size: 12px; }
-.cheatsheet-table td { padding: 5px 0; border-bottom: 1px solid #1b2338; vertical-align: top; }
-.cheatsheet-table td:first-child { white-space: nowrap; padding-right: 14px; }
-.cheatsheet-table td:last-child { color: var(--text-dim); }
-.cheatsheet-note { color: var(--text-faint); font-size: 11.5px; line-height: 1.6; margin: 12px 0 0; }
-.cheatsheet-note code { font-family: var(--mono); color: #cfdcff; background: #0b1220; padding: 1px 5px; border-radius: 4px; }
+.challenge-closer { color: var(--text-faint); font-size: 12.5px; margin-top: 14px; }
 
-.challenge-tickets h2 { font-size: 14px; margin: 8px 0 12px; }
-.ticket-list { display: flex; flex-direction: column; gap: 12px; }
-.ticket-card {
-  background: var(--bg-panel);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 16px 20px;
-}
+/* Card content shared between the (now removed) linear ticket list and
+   the kanban cards below — kept as one set of classes. */
 .ticket-header { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
 .ticket-number { font-family: var(--mono); font-size: 11px; color: var(--text-faint); letter-spacing: .04em; }
 .ticket-tag {
@@ -184,20 +176,70 @@ kbd { font-family: var(--mono); font-size: 11px; color: var(--text-dim); backgro
 .tag-medium { background: #4a3717; color: var(--level-warn); }
 .tag-hard { background: #4a1f1f; color: #f18b8b; }
 .tag-bonus { background: #2a1c44; color: #c79bf0; }
-.ticket-card h3 { font-size: 15px; margin: 0 0 8px; }
 .ticket-quote {
   margin: 0 0 10px;
   padding: 8px 12px;
   border-left: 3px solid var(--accent-dim);
   color: var(--text-dim);
   font-style: italic;
-  font-size: 13px;
+  font-size: 12.5px;
   line-height: 1.6;
 }
-.ticket-meta { color: var(--text-faint); font-size: 12px; margin: 0 0 8px; }
-.ticket-ask { color: var(--text); font-size: 13.5px; line-height: 1.6; margin: 0; }
+.ticket-meta { color: var(--text-faint); font-size: 11.5px; margin: 0 0 8px; }
+.ticket-ask { color: var(--text); font-size: 12.5px; line-height: 1.6; margin: 0; }
 
-.challenge-closer { color: var(--text-faint); font-size: 12.5px; text-align: center; margin-top: 30px; }
+/* Kanban board */
+.board-header {
+  width: 100%;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 12px;
+  margin-bottom: 16px;
+}
+.board-header h2 { font-size: 15px; margin: 0 0 4px; }
+.board-hint { color: var(--text-faint); font-size: 12.5px; margin: 0; max-width: none; }
+
+.kanban { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; align-items: start; }
+@media (max-width: 700px) { .kanban { grid-template-columns: 1fr; } }
+
+.kanban-col { background: var(--bg-panel); border: 1px solid var(--border); border-radius: 8px; padding: 12px; min-height: 60px; }
+.kanban-col-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--text-faint);
+  margin-bottom: 10px;
+  padding: 0 2px;
+}
+.kanban-count {
+  font-family: var(--mono);
+  background: var(--bg-panel-alt);
+  border-radius: 999px;
+  padding: 1px 7px;
+  font-size: 10.5px;
+  color: var(--text-dim);
+}
+.kanban-cards { display: flex; flex-direction: column; gap: 10px; }
+
+.kanban-card { background: var(--bg-panel-alt); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; }
+.kanban-card h3 { font-size: 13.5px; margin: 0 0 8px; }
+
+.kanban-actions { display: flex; gap: 6px; margin-top: 10px; }
+.kanban-btn {
+  flex: 1 1 auto;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  border-radius: 6px;
+  padding: 5px 8px;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.kanban-btn:hover { background: var(--bg-hover); color: var(--text); }
+.kanban-btn-primary { background: var(--accent-dim); border-color: var(--accent); color: #cfdcff; font-weight: 600; }
+.kanban-btn-primary:hover { background: var(--accent); color: #0b1220; }
 
 /* =============================================================== LOGS */
 .logs-layout { display: flex; flex: 1 1 auto; min-height: 0; width: 100%; }

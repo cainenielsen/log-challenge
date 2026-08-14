@@ -5,21 +5,11 @@
 // the database.
 import * as Util from "./util.js";
 
-const { qs, qsa, el, escapeHtml } = Util;
+const { qs, qsa, el } = Util;
 
-const CHEATSHEET_ROWS = [
-  ["service:payments-service", "field match"],
-  ["level:ERROR", "field match"],
-  ["account_id:42", "numeric field match"],
-  ['"insufficient funds"', "exact phrase — searched across message, stack trace, etc."],
-  ["error_type:*Error", "wildcard"],
-  ["-level:DEBUG  /  NOT level:DEBUG", "negation"],
-  ["service:payments-service AND level:ERROR", "boolean AND"],
-  ["level:ERROR OR level:WARN", "boolean OR"],
-  ["(level:ERROR OR level:WARN) AND service:payments-service", "grouping"],
-  ["duration_ms:>1000", "comparison"],
-  ["http_status:[400 TO 599]", "range"],
-];
+const BOARD_KEY = "log-challenge:board:v1";
+const STATUSES = ["todo", "doing", "done"];
+const COLUMN_LABELS = { todo: "To Do", doing: "In Progress", done: "Done" };
 
 const TICKETS = [
   {
@@ -56,6 +46,19 @@ const TICKETS = [
   },
 ];
 
+function loadBoard() {
+  try {
+    const raw = localStorage.getItem(BOARD_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch (e) {
+    return {};
+  }
+}
+function saveBoard(board) {
+  try { localStorage.setItem(BOARD_KEY, JSON.stringify(board)); } catch (e) { /* private browsing, storage full, etc. — board just won't persist */ }
+}
+
 export function init(root, nav) {
   root.innerHTML = `
     <div class="challenge-page">
@@ -74,75 +77,94 @@ export function init(root, nav) {
         </p>
       </div>
 
-      <div class="challenge-grid">
-        <section class="challenge-card">
-          <h2>How to work a ticket</h2>
-          <ol class="step-list">
-            <li>Support tickets come with a username and roughly when/what happened
-              — not internal IDs. Look the customer up in <strong>Database Admin</strong>
-              (<code>users</code> table) to get their <code>id</code>, then their
-              <code>accounts</code> and <code>transactions</code>.</li>
-            <li>Search <strong>Log Explorer</strong> for that <code>account_id</code> /
-              <code>transaction_id</code> / <code>user_id</code> around the reported
-              time to see what actually happened server-side.</li>
-            <li>Follow <code>trace_id</code> / <code>request_id</code> to see the full
-              request across all three services, not just the one that logged an
-              error. Logs only carry internal numeric IDs, not usernames — that's
-              why step 1 matters.</li>
-          </ol>
-          <div class="challenge-jumps">
-            <button class="btn" data-jump="logs">Open Log Explorer →</button>
-            <button class="btn" data-jump="admin">Open Database Admin →</button>
+      <div class="challenge-layout">
+        <div class="challenge-doc">
+          <section class="challenge-card">
+            <h2>How to work a ticket</h2>
+            <ol class="step-list">
+              <li>Support tickets come with a username and roughly when/what happened
+                — not internal IDs. Look the customer up in <strong>Database Admin</strong>
+                (<code>users</code> table) to get their <code>id</code>, then their
+                <code>accounts</code> and <code>transactions</code>.</li>
+              <li>Search <strong>Log Explorer</strong> for that <code>account_id</code> /
+                <code>transaction_id</code> / <code>user_id</code> around the reported
+                time to see what actually happened server-side.</li>
+              <li>Follow <code>trace_id</code> / <code>request_id</code> to see the full
+                request across all three services, not just the one that logged an
+                error. Logs only carry internal numeric IDs, not usernames — that's
+                why step 1 matters.</li>
+            </ol>
+            <div class="challenge-jumps">
+              <button class="btn" data-jump="logs">Open Log Explorer →</button>
+              <button class="btn" data-jump="admin">Open Database Admin →</button>
+            </div>
+          </section>
+
+          <section class="challenge-card">
+            <h2>Warm-up</h2>
+            <p class="challenge-section-note">These don't map to a specific ticket — just get comfortable with the tools first.</p>
+            <ol class="warmup-list">
+              <li>How many ERROR-level log lines has <code>payments-service</code> produced in the last 7 days?</li>
+              <li>Which service produced the most WARN-level logs overall, and what's the most common WARN message for it?</li>
+              <li>Using Database Admin, how many users currently have a status other than <code>active</code>? What are the distinct status values?</li>
+            </ol>
+          </section>
+
+          <p class="challenge-closer">Good luck — and remember: the log tool never lies,
+            but it also never tells you the whole story by itself.</p>
+        </div>
+
+        <div class="challenge-board">
+          <div class="board-header">
+            <h2>Ticket queue</h2>
+            <p class="board-hint">Move a card as you work through it — saved locally in this browser, nobody else sees it.</p>
           </div>
-        </section>
-
-        <section class="challenge-card">
-          <h2>Query syntax cheat sheet</h2>
-          <table class="cheatsheet-table">
-            <tbody>
-              ${CHEATSHEET_ROWS.map(([q, desc]) => `
-                <tr><td><code>${escapeHtml(q)}</code></td><td>${escapeHtml(desc)}</td></tr>
-              `).join("")}
-            </tbody>
-          </table>
-          <p class="cheatsheet-note">Terms with no operator are combined with AND.
-            Bare words search across message, service, error_type, stack_trace,
-            http_path, and metadata. Only <code>SELECT</code> / <code>WITH</code> /
-            <code>EXPLAIN</code> are accepted in Database Admin — this mirrors a real
-            read-replica support tool.</p>
-        </section>
+          <div class="kanban">
+            ${STATUSES.map((s) => `
+              <div class="kanban-col">
+                <div class="kanban-col-header">
+                  <span>${COLUMN_LABELS[s]}</span>
+                  <span class="kanban-count" id="count-${s}"></span>
+                </div>
+                <div class="kanban-cards" id="col-${s}"></div>
+              </div>
+            `).join("")}
+          </div>
+        </div>
       </div>
-
-      <section class="challenge-card">
-        <h2>Warm-up</h2>
-        <p class="challenge-section-note">These don't map to a specific ticket — just get comfortable with the tools first.</p>
-        <ol class="warmup-list">
-          <li>How many ERROR-level log lines has <code>payments-service</code> produced in the last 7 days?</li>
-          <li>Which service produced the most WARN-level logs overall, and what's the most common WARN message for it?</li>
-          <li>Using Database Admin, how many users currently have a status other than <code>active</code>? What are the distinct status values?</li>
-        </ol>
-      </section>
-
-      <section class="challenge-tickets">
-        <h2>Ticket queue</h2>
-        <div id="ticket-list" class="ticket-list"></div>
-      </section>
-
-      <p class="challenge-closer">Good luck — and remember: the log tool never lies,
-        but it also never tells you the whole story by itself.</p>
     </div>
   `;
-
-  const ticketList = qs("#ticket-list", root);
-  TICKETS.forEach((t) => ticketList.appendChild(buildTicketCard(t)));
 
   qsa("[data-jump]", root).forEach((btn) => {
     btn.addEventListener("click", () => nav.switchTab(btn.dataset.jump));
   });
+
+  const board = loadBoard();
+  const columnEls = Object.fromEntries(STATUSES.map((s) => [s, qs(`#col-${s}`, root)]));
+  const countEls = Object.fromEntries(STATUSES.map((s) => [s, qs(`#count-${s}`, root)]));
+
+  function statusFor(ticketId) {
+    const s = board[ticketId];
+    return STATUSES.includes(s) ? s : "todo";
+  }
+  function setStatus(ticketId, status) {
+    board[ticketId] = status;
+    saveBoard(board);
+    renderBoard();
+  }
+  function renderBoard() {
+    STATUSES.forEach((s) => { columnEls[s].innerHTML = ""; });
+    TICKETS.forEach((t) => {
+      const status = statusFor(t.id);
+      columnEls[status].appendChild(buildKanbanCard(t, status, setStatus));
+    });
+    STATUSES.forEach((s) => { countEls[s].textContent = String(columnEls[s].children.length); });
+  }
+  renderBoard();
 }
 
-function buildTicketCard(t) {
-  const card = el("article", { class: "ticket-card" });
+function buildKanbanCard(t, status, setStatus) {
+  const card = el("article", { class: "kanban-card" });
   const header = el("div", { class: "ticket-header" }, [
     el("span", { class: "ticket-number", text: t.id === 6 ? "Bonus" : `Ticket #${t.id}` }),
     el("span", { class: "ticket-tag tag-" + t.tag.toLowerCase(), text: t.tag }),
@@ -152,5 +174,22 @@ function buildTicketCard(t) {
   if (t.quote) card.appendChild(el("blockquote", { class: "ticket-quote", text: t.quote }));
   if (t.meta) card.appendChild(el("p", { class: "ticket-meta", text: t.meta }));
   card.appendChild(el("p", { class: "ticket-ask", text: t.ask }));
+
+  const actions = el("div", { class: "kanban-actions" });
+  if (status === "todo") {
+    actions.appendChild(el("button", {
+      class: "kanban-btn kanban-btn-primary", text: "Start →",
+      onclick: () => setStatus(t.id, "doing"),
+    }));
+  } else if (status === "doing") {
+    actions.appendChild(el("button", { class: "kanban-btn", text: "← Back", onclick: () => setStatus(t.id, "todo") }));
+    actions.appendChild(el("button", {
+      class: "kanban-btn kanban-btn-primary", text: "Done ✓",
+      onclick: () => setStatus(t.id, "done"),
+    }));
+  } else {
+    actions.appendChild(el("button", { class: "kanban-btn", text: "← Reopen", onclick: () => setStatus(t.id, "doing") }));
+  }
+  card.appendChild(actions);
   return card;
 }
