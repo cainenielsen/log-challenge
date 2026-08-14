@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Log Challenge — Support Engineer Debugging Exercise</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🔎</text></svg>">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="app-header">
+    <div class="brand">
+      <span class="brand-icon">🔎</span>
+      <span class="brand-name">Log Challenge</span>
+      <span class="brand-tag">Mock Support Console</span>
+    </div>
+    <nav class="tab-bar">
+      <button class="tab-btn active" data-tab="challenge">Challenge</button>
+      <button class="tab-btn" data-tab="logs">Log Explorer</button>
+      <button class="tab-btn" data-tab="admin">Database Admin</button>
+    </nav>
+  </header>
+
+  <div id="boot-status" class="boot-status">Loading mock database…</div>
+
+  <div id="app" hidden>
+    <section id="tab-challenge" class="tab-panel active"></section>
+    <section id="tab-logs" class="tab-panel"></section>
+    <section id="tab-admin" class="tab-panel"></section>
+  </div>
+
+  <script src="vendor/sql-wasm.js"></script>
+  <script src="js/util.js"></script>
+  <script src="js/db.js"></script>
+  <script src="js/lucene.js"></script>
+  <script src="js/challenge.js"></script>
+  <script src="js/logs.js"></script>
+  <script src="js/dbadmin.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

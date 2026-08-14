@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Log Challenge — Answer Key (Private)</title>
+  <link rel="stylesheet" href="css/answers.css">
+</head>
+<body>
+<div class="page">
+  <header class="masthead">
+    <p class="kicker">Private — not linked from the app, do not share this URL</p>
+    <h1>Log Challenge Answer Key</h1>
+    <p class="dek">Ground truth for the six tickets in the Challenge tab, generated
+      deterministically by <code>data/build_db.py</code> (seed 20260814). Regenerating
+      the database reproduces these exact values as long as the generator itself
+      isn't edited.</p>
+  </header>
+
+  <div class="summary-table-wrap">
+    <table class="summary">
+      <thead>
+        <tr><th>Ticket</th><th>Customer</th><th>Root cause</th><th>Difficulty</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><a href="#t1">#1 Declined card</a></td><td>hiroshi.wilson</td><td>Insufficient funds — balance below charge amount</td><td>Warm-up</td></tr>
+        <tr><td><a href="#t2">#2 Charged twice</a></td><td>stephanie.osei</td><td>Client retried after a slow gateway response; retry wasn't deduped</td><td>Easy</td></tr>
+        <tr><td><a href="#t3">#3 Can't log in</a></td><td>elizabeth.okafor</td><td>Account auto-locked after 5 failed logins in ~90s</td><td>Easy</td></tr>
+        <tr><td><a href="#t4">#4 Missing receipt</a></td><td>omar.davis</td><td>Receipt renderer throws on non-USD (EUR) account currency</td><td>Medium</td></tr>
+        <tr><td><a href="#t5">#5 Silent failure</a></td><td>susan.novak</td><td>notifications-service never received/logged the request — dropped, no error</td><td>Hard</td></tr>
+        <tr><td><a href="#t6">#6 Bonus — outage</a></td><td>14 different customers</td><td>~35 min systemic payment-gateway outage, not customer-specific</td><td>Bonus</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <section class="scenario" id="t1">
+    <div class="scenario-eyebrow">
+      <span class="scenario-id">TICKET #1</span>
+      <span class="difficulty">Warm-up</span>
+    </div>
+    <h2>Declined card at Green Leaf Cafe</h2>
+    <div class="facts">
+      <div><span class="fact-label">Username</span><span class="fact-value">hiroshi.wilson</span></div>
+      <div><span class="fact-label">account_id</span><span class="fact-value">9</span></div>
+      <div><span class="fact-label">transaction_id</span><span class="fact-value">899</span></div>
+      <div><span class="fact-label">Amount</span><span class="fact-value">$84.50</span></div>
+      <div><span class="fact-label">Balance at time</span><span class="fact-value">$34.21</span></div>
+      <div><span class="fact-label">Date</span><span class="fact-value">2026-08-07 03:48 UTC</span></div>
+    </div>
+    <p class="root-cause-label">Expected path</p>
+    <div class="query-block">
+      <div class="query-block-label">1. Database Admin — find the user &amp; account</div>
+      <pre class="code"><span class="kw">SELECT</span> * <span class="kw">FROM</span> users <span class="kw">WHERE</span> username = 'hiroshi.wilson';
+<span class="kw">SELECT</span> * <span class="kw">FROM</span> accounts <span class="kw">WHERE</span> user_id = 7;</pre>
+      <div class="query-block-label">2. Log Explorer — find the decline</div>
+      <pre class="code">account_id:9 <span class="kw">AND</span> level:ERROR</pre>
+    </div>
+    <div class="grading">
+      <strong>Good answer:</strong> transaction 899 failed with
+      <code>failure_reason='insufficient_funds'</code>; the ERROR log shows balance
+      $34.21 vs. an $84.50 charge. No bug — correct decline, working as intended.
+    </div>
+  </section>
+
+  <section class="scenario" id="t2">
+    <div class="scenario-eyebrow">
+      <span class="scenario-id">TICKET #2</span>
+      <span class="difficulty">Easy</span>
+    </div>
+    <h2>Double charge from Acme Movers</h2>
+    <div class="facts">
+      <div><span class="fact-label">Username</span><span class="fact-value">stephanie.osei</span></div>
+      <div><span class="fact-label">account_id</span><span class="fact-value">21</span></div>
+      <div><span class="fact-label">transaction_ids</span><span class="fact-value">900, 901</span></div>
+      <div><span class="fact-label">idempotency_key</span><span class="fact-value">idem_b2c42bf31c0cb640ca50</span></div>
+      <div><span class="fact-label">Amount (each)</span><span class="fact-value">$219.99</span></div>
+      <div><span class="fact-label">Dates</span><span class="fact-value">21:20:00 &amp; 21:20:14 UTC, Aug 9</span></div>
+    </div>
+    <p class="root-cause-label">Expected path</p>
+    <div class="query-block">
+      <div class="query-block-label">1. Database Admin — spot the duplicate idempotency key</div>
+      <pre class="code"><span class="kw">SELECT</span> idempotency_key, <span class="kw">COUNT</span>(*) n, <span class="kw">GROUP_CONCAT</span>(id) ids
+<span class="kw">FROM</span> transactions <span class="kw">GROUP BY</span> idempotency_key <span class="kw">HAVING</span> n > 1;</pre>
+      <div class="query-block-label">2. Log Explorer — see the retry</div>
+      <pre class="code">account_id:21 <span class="kw">AND</span> service:payments-service</pre>
+    </div>
+    <div class="grading">
+      <strong>Good answer:</strong> the first attempt (txn 900) hit a 6.4s slow
+      gateway response (WARN "upstream gateway slow response"); the client gave up
+      waiting and retried 14s later as a <em>new</em> request (txn 901, same
+      idempotency_key, different trace_id) — the retry log line literally says
+      "charge attempt received (client retry)". The server treated the retry as a
+      brand-new charge instead of deduping on the idempotency key. Refund txn 901
+      (or 900) and flag the idempotency-key-not-enforced bug.
+    </div>
+  </section>
+
+  <section class="scenario" id="t3">
+    <div class="scenario-eyebrow">
+      <span class="scenario-id">TICKET #3</span>
+      <span class="difficulty">Easy</span>
+    </div>
+    <h2>Account locked after failed logins</h2>
+    <div class="facts">
+      <div><span class="fact-label">Username</span><span class="fact-value">elizabeth.okafor</span></div>
+      <div><span class="fact-label">user_id</span><span class="fact-value">28</span></div>
+      <div><span class="fact-label">Failed attempts</span><span class="fact-value">5</span></div>
+      <div><span class="fact-label">Locked at</span><span class="fact-value">2026-08-12 05:56:35 UTC</span></div>
+      <div><span class="fact-label">locked_reason</span><span class="fact-value">too_many_failed_logins</span></div>
+    </div>
+    <p class="root-cause-label">Expected path</p>
+    <div class="query-block">
+      <div class="query-block-label">1. Database Admin — confirm the lock</div>
+      <pre class="code"><span class="kw">SELECT</span> id, status, locked_at, locked_reason
+<span class="kw">FROM</span> users <span class="kw">WHERE</span> username = 'elizabeth.okafor';</pre>
+      <div class="query-block-label">2. Log Explorer — reconstruct the sequence</div>
+      <pre class="code">user_id:28 <span class="kw">AND</span> service:auth-service</pre>
+    </div>
+    <div class="grading">
+      <strong>Good answer:</strong> 5 WARN "invalid password attempt" lines within
+      ~90 seconds, followed by an ERROR "account locked after repeated failed
+      logins" (http_status 423). Working as intended — advise the customer to use
+      password reset; not a bug.
+    </div>
+  </section>
+
+  <section class="scenario" id="t4">
+    <div class="scenario-eyebrow">
+      <span class="scenario-id">TICKET #4</span>
+      <span class="difficulty">Medium</span>
+    </div>
+    <h2>Missing receipt email — Wayfinder Travel</h2>
+    <div class="facts">
+      <div><span class="fact-label">Username</span><span class="fact-value">omar.davis</span></div>
+      <div><span class="fact-label">account_id</span><span class="fact-value">5</span></div>
+      <div><span class="fact-label">transaction_id</span><span class="fact-value">902</span></div>
+      <div><span class="fact-label">Account currency</span><span class="fact-value">EUR</span></div>
+      <div><span class="fact-label">error_type</span><span class="fact-value">UnsupportedCurrencyError</span></div>
+      <div><span class="fact-label">Date</span><span class="fact-value">2026-08-08 16:38 UTC</span></div>
+    </div>
+    <p class="root-cause-label">Expected path</p>
+    <div class="query-block">
+      <div class="query-block-label">1. Database Admin — notice the account isn't USD</div>
+      <pre class="code"><span class="kw">SELECT</span> a.id, a.currency <span class="kw">FROM</span> accounts a
+<span class="kw">JOIN</span> users u <span class="kw">ON</span> u.id = a.user_id <span class="kw">WHERE</span> u.username = 'omar.davis';</pre>
+      <div class="query-block-label">2. Log Explorer — find the exception + stack trace</div>
+      <pre class="code">account_id:5 <span class="kw">AND</span> error_type:*Error</pre>
+    </div>
+    <div class="grading">
+      <strong>Good answer:</strong> notifications-service ERROR "unhandled exception
+      rendering receipt template", <code>error_type=UnsupportedCurrencyError</code>,
+      with a stack trace pointing at <code>receipt.go:88</code> — the legacy
+      formatter doesn't recognize EUR. This is a real bug affecting all non-USD
+      accounts, not just this customer — worth escalating, not just resolving the
+      ticket.
+    </div>
+  </section>
+
+  <section class="scenario" id="t5">
+    <div class="scenario-eyebrow">
+      <span class="scenario-id">TICKET #5</span>
+      <span class="difficulty">Hard</span>
+    </div>
+    <h2>Purchase went through, no receipt, no error</h2>
+    <div class="facts">
+      <div><span class="fact-label">Username</span><span class="fact-value">susan.novak</span></div>
+      <div><span class="fact-label">account_id</span><span class="fact-value">57</span></div>
+      <div><span class="fact-label">transaction_id</span><span class="fact-value">903</span></div>
+      <div><span class="fact-label">trace_id</span><span class="fact-value">3feb534d327159ca19baf17b29b9814f</span></div>
+      <div><span class="fact-label">Date</span><span class="fact-value">2026-08-13 00:42 UTC</span></div>
+    </div>
+    <p class="root-cause-label">Expected path</p>
+    <div class="query-block">
+      <div class="query-block-label">1. Find the transaction, then its trace_id via any payments log for it</div>
+      <pre class="code">account_id:57 <span class="kw">AND</span> service:payments-service</pre>
+      <div class="query-block-label">2. Pull every log for that trace across all three services</div>
+      <pre class="code">trace_id:"3feb534d327159ca19baf17b29b9814f"</pre>
+    </div>
+    <div class="grading">
+      <strong>Good answer:</strong> the query returns exactly 4 rows — 1
+      auth-service INFO, 3 payments-service INFO ("charge attempt received" →
+      "charge created" → "charge settled") — and <em>zero</em> rows from
+      notifications-service. The point of this ticket is noticing an absence: there
+      is no ERROR anywhere, the request simply never reached
+      notifications-service (dropped/lost, e.g. a queue delivery gap), so no
+      receipt was ever attempted. A candidate who says "I don't see an error so
+      everything's fine" has missed it; a strong answer explicitly checks each of
+      the three services for the trace and flags the missing one.
+    </div>
+  </section>
+
+  <section class="scenario" id="t6">
+    <div class="scenario-eyebrow">
+      <span class="scenario-id">BONUS TICKET #6</span>
+      <span class="difficulty">Bonus</span>
+    </div>
+    <h2>Cluster of payment failures, Aug 7 evening</h2>
+    <div class="facts">
+      <div><span class="fact-label">Window start</span><span class="fact-value">2026-08-07 21:00 UTC</span></div>
+      <div><span class="fact-label">Window end</span><span class="fact-value">2026-08-07 21:35 UTC</span></div>
+      <div><span class="fact-label">error_type</span><span class="fact-value">GatewayUnavailableError</span></div>
+      <div><span class="fact-label">Affected customers</span><span class="fact-value">14 distinct usernames</span></div>
+    </div>
+    <p class="root-cause-label">Expected path</p>
+    <div class="query-block">
+      <div class="query-block-label">Log Explorer</div>
+      <pre class="code">service:payments-service <span class="kw">AND</span> level:ERROR <span class="kw">AND</span> error_type:GatewayUnavailableError</pre>
+    </div>
+    <div class="grading">
+      <strong>Good answer:</strong> 14 ERROR "charge failed: payment gateway
+      unreachable" lines (http_status 502) across 14 <em>different</em> accounts,
+      all within a ~35 minute window — same <code>metadata.gateway</code>
+      ("stripe-primary"). The signature (many customers, one narrow window, one
+      error_type, one upstream dependency) marks this as a systemic outage, not a
+      per-customer issue — the write-up should say so rather than triaging each
+      customer individually.
+    </div>
+  </section>
+
+  <footer>
+    Regenerate the database with <code>python3 data/build_db.py</code> · seed 20260814
+  </footer>
+</div>
+</body>
+</html>
